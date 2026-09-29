@@ -36,15 +36,11 @@ path 2 solves.
 
 ## 2. Signed Flatpak repository and landing page on GitHub Pages
 
-A signed Flatpak repository served from GitHub Pages at <https://drvonmiau.github.io/Quill/>, with a
-landing page whose Install button opens GNOME Software. Users add the
-repository once and then get updates through GNOME Software or
-`flatpak update` like any other app — the same setup as Dice.
-
-> The repository is named `Quill` with a capital Q, and GitHub Pages paths
-> follow the repository name, so the site is at `/Quill/`. If you ever rename
-> the repository, do it **before** the first release goes out: every user's
-> remote points at this URL, and Pages does not redirect after a rename.
+A signed Flatpak repository served from GitHub Pages at
+<https://drvonmiau.github.io/quill/>, with a landing page whose Install button
+opens GNOME Software. Users add the repository once and then get updates
+through GNOME Software or `flatpak update` like any other app — the same setup
+as Dice.
 
 **How it works** — `.github/workflows/flatpak-repo.yml` runs when a release is
 published (and by hand from Actions → "Flatpak repository (GitHub Pages)" →
@@ -81,10 +77,10 @@ under `upload-pages-includes` to the **site root by file name**, so reference
 them in the HTML by bare name, keep names unique, and add any new media file
 to that list.
 
-**What users do** — click Install on <https://drvonmiau.github.io/Quill/>, or from a terminal:
+**What users do** — click Install on <https://drvonmiau.github.io/quill/>, or from a terminal:
 
 ```sh
-flatpak remote-add --user --if-not-exists quill https://drvonmiau.github.io/Quill/index.flatpakrepo
+flatpak remote-add --user --if-not-exists quill https://drvonmiau.github.io/quill/index.flatpakrepo
 flatpak install --user quill io.github.drvonmiau.Quill
 ```
 

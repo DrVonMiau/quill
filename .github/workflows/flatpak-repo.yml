@@ -3,9 +3,6 @@ name: Flatpak repository (GitHub Pages)
 # Builds a signed Flatpak repository and publishes it to GitHub Pages, so users
 # add it once and then get updates through GNOME Software / `flatpak update`.
 #
-# The repository is named "Quill", and GitHub Pages paths follow the
-# repository name, so the site lives at /Quill/.
-#
 # Runs when a release is published (and by hand from the Actions tab), so only
 # released versions reach users — not every commit to main.
 #
@@ -64,9 +61,9 @@ jobs:
           Branch=master
           Title=Quill
           Description=Track the books you read
-          Homepage=https://drvonmiau.github.io/Quill/
-          Icon=https://drvonmiau.github.io/Quill/io.github.drvonmiau.Quill.png
-          Url=https://drvonmiau.github.io/Quill/
+          Homepage=https://drvonmiau.github.io/quill/
+          Icon=https://drvonmiau.github.io/quill/io.github.drvonmiau.Quill.png
+          Url=https://drvonmiau.github.io/quill/
           SuggestRemoteName=quill
           RuntimeRepo=https://dl.flathub.org/repo/flathub.flatpakrepo
           IsRuntime=false

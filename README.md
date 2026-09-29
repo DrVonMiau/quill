@@ -46,18 +46,19 @@ library on your own machine.
 
 ## Install
 
-Get Quill from **<https://drvonmiau.github.io/Quill/>** — the Install button opens GNOME Software, and
-updates then arrive like any other app's. Or from a terminal:
+Get Quill from **<https://drvonmiau.github.io/quill/>** — the Install button
+opens GNOME Software, and updates then arrive like any other app's. Or from a
+terminal:
 
 ```sh
-flatpak remote-add --user --if-not-exists quill https://drvonmiau.github.io/Quill/index.flatpakrepo
+flatpak remote-add --user --if-not-exists quill https://drvonmiau.github.io/quill/index.flatpakrepo
 flatpak install --user quill io.github.drvonmiau.Quill
 ```
 
 You only need [Flatpak](https://flatpak.org/setup/), which most Linux
 distributions already have. Quill isn't on Flathub, which doesn't accept apps
 made with AI assistance; it ships from its own signed repository instead.
-Each [release](https://github.com/DrVonMiau/Quill/releases) also carries a
+Each [release](https://github.com/DrVonMiau/quill/releases) also carries a
 single-file `.flatpak` bundle, which doesn't update itself.
 
 ## Building from source
