@@ -1,9 +1,10 @@
 # Distributing Quill
 
 Quill isn't on Flathub (their guidelines exclude AI-assisted projects), so it
-ships through GitHub instead. Two paths are set up, and they can coexist.
+ships through GitHub instead. Two paths are set up, and they coexist. Path 2
+is the one to point people at: it has the landing page and delivers updates.
 
-## 1. Single-file bundle on Releases (active now)
+## 1. Single-file bundle on Releases
 
 The simplest path: every tagged release carries a `.flatpak` bundle users can
 download and double-click.
@@ -33,39 +34,63 @@ flatpak run io.github.drvonmiau.Quill
 Trade-off: no automatic updates — users re-download to upgrade. That's what
 path 2 solves.
 
-## 2. Hosted Flatpak repo on GitHub Pages (scaffolded, activate later)
+## 2. Signed Flatpak repository and landing page on GitHub Pages
 
-A static Flatpak repository served from GitHub Pages. Users add it once as a
-remote and then get updates through GNOME Software / `flatpak update` like any
-store app.
+A signed Flatpak repository served from GitHub Pages at <https://drvonmiau.github.io/Quill/>, with a
+landing page whose Install button opens GNOME Software. Users add the
+repository once and then get updates through GNOME Software or
+`flatpak update` like any other app — the same setup as Dice.
 
-**How it works** — `.github/workflows/flatpak-repo.yml` builds the repo with
-[Flatter](https://github.com/andyholmes/flatter) and deploys it to Pages. It's
-`workflow_dispatch`-only (manual) until you enable it, so it won't fail on every
-push before Pages exists.
+> The repository is named `Quill` with a capital Q, and GitHub Pages paths
+> follow the repository name, so the site is at `/Quill/`. If you ever rename
+> the repository, do it **before** the first release goes out: every user's
+> remote points at this URL, and Pages does not redirect after a rename.
 
-**To activate**
+**How it works** — `.github/workflows/flatpak-repo.yml` runs when a release is
+published (and by hand from Actions → "Flatpak repository (GitHub Pages)" →
+Run workflow on `main`). It builds the app with
+[Flatter](https://github.com/andyholmes/flatter) in the GNOME 49 container,
+signs the repository, writes a one-click `io.github.drvonmiau.Quill.flatpakref`,
+and deploys the repository together with `pages/` to Pages. Only released
+versions reach users, not every commit to `main`.
+
+**One-time setup** (in the GitHub UI)
 
 1. **Settings → Pages → Source: "GitHub Actions".**
-2. *(Recommended)* Sign the repo so users don't need `--no-gpg-verify`:
-   ```sh
-   gpg --quick-gen-key "Quill <you@example.com>"
-   gpg --armor --export <KEYID> > quill.gpg                # public — ship this
-   gpg --armor --export-secret-keys <KEYID>                # private — copy output
-   ```
-   Add two repo secrets — `FLATPAK_GPG_KEY` (the private-key block) and
-   `FLATPAK_GPG_KEYID` (the key id) — then uncomment the two signing lines in the
-   workflow.
-3. In the workflow, uncomment the `push: branches: [main]` trigger so every push
-   republishes the repo.
+2. **Settings → Secrets and variables → Actions → New repository secret**,
+   reusing the signing key already made for Dice:
+   - `FLATPAK_GPG_KEY` — the full armored private key
+     (`gpg --armor --export-secret-keys <KEYID>`), pasted as-is including the
+     `-----BEGIN/END PGP PRIVATE KEY BLOCK-----` lines.
+   - `FLATPAK_GPG_PASSPHRASE` — its passphrase.
 
-**What users do** (once your Pages URL is live, e.g. `https://drvonmiau.github.io/quill`)
+   Never commit the key or passphrase, or paste them anywhere else.
+3. Publish a release (or run the workflow by hand on `main`).
+
+**If a run fails**
+
+- "GPG Agent: No pinentry" — `FLATPAK_GPG_PASSPHRASE` is missing or wrong.
+- "Misformed armored text" — `FLATPAK_GPG_KEY` wasn't pasted as the complete
+  armored block.
+- A run from any branch other than `main` fails at "Deploy to Pages": the
+  `github-pages` environment only deploys from `main`. That's expected.
+
+**The landing page** is `pages/index.html`, one self-contained file.
+Screenshots live in `pages/media/` as WebP. Flatter copies every file listed
+under `upload-pages-includes` to the **site root by file name**, so reference
+them in the HTML by bare name, keep names unique, and add any new media file
+to that list.
+
+**What users do** — click Install on <https://drvonmiau.github.io/Quill/>, or from a terminal:
 
 ```sh
-flatpak remote-add --user quill https://drvonmiau.github.io/quill/index.flatpakrepo
+flatpak remote-add --user --if-not-exists quill https://drvonmiau.github.io/Quill/index.flatpakrepo
 flatpak install --user quill io.github.drvonmiau.Quill
 ```
 
-From then on `flatpak update` pulls new versions automatically. This is the
-backend for the download page you mentioned wanting to build — the page just
-links to the `.flatpakrepo` file and shows the two commands above.
+To remove it again:
+
+```sh
+flatpak uninstall --user io.github.drvonmiau.Quill
+flatpak remote-delete --user quill
+```

@@ -6,7 +6,7 @@
 	<name>Quill</name>
 	<summary>Track the books you read</summary>
 	<developer id="io.github.drvonmiau">
-		<name>Daniel</name>
+		<name>Dr. von Miau</name>
 	</developer>
 	<description>
 	  <p>
@@ -24,6 +24,11 @@
 	    <li>Import from an Openreads CSV export and export your library back to CSV</li>
 	    <li>Light and dark themes that follow the system</li>
 	  </ul>
+	  <p>
+	    Quill uses the network to search Open Library and Google Books for
+	    books, covers and summaries. It reads your system's icon theme so
+	    its buttons match your desktop, and never changes anything there.
+	  </p>
 	</description>
 	<launchable type="desktop-id">io.github.drvonmiau.Quill.desktop</launchable>
 	<content_rating type="oars-1.1"/>
