@@ -14,6 +14,10 @@
         <attribute name="action">win.add-manual</attribute>
       </item>
       <item>
+        <attribute name="label" translatable="yes">Add Ebook Files…</attribute>
+        <attribute name="action">win.add-ebooks</attribute>
+      </item>
+      <item>
         <attribute name="label" translatable="yes">Import from CSV…</attribute>
         <attribute name="action">win.import-csv</attribute>
       </item>
@@ -26,6 +30,10 @@
       <item>
         <attribute name="label" translatable="yes">Look for Missing Covers</attribute>
         <attribute name="action">win.find-missing-covers</attribute>
+      </item>
+      <item>
+        <attribute name="label" translatable="yes">Send This Shelf to E-reader</attribute>
+        <attribute name="action">win.send-shelf</attribute>
       </item>
     </section>
     <section>
@@ -609,6 +617,27 @@
                                           <class name="flat"/>
                                           <class name="date-edit"/>
                                         </style>
+                                      </object>
+                                    </child>
+                                  </object>
+                                </child>
+
+                                <child>
+                                  <object class="GtkBox">
+                                    <property name="spacing">12</property>
+                                    <child>
+                                      <object class="GtkLabel">
+                                        <property name="label" translatable="yes">File</property>
+                                        <property name="xalign">0</property>
+                                        <style><class name="detail-key"/></style>
+                                      </object>
+                                    </child>
+                                    <child>
+                                      <object class="GtkLabel" id="detail_file">
+                                        <property name="hexpand">true</property>
+                                        <property name="xalign">1</property>
+                                        <property name="ellipsize">middle</property>
+                                        <style><class name="detail-val"/></style>
                                       </object>
                                     </child>
                                   </object>

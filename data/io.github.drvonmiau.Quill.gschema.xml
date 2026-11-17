@@ -52,5 +52,15 @@
 			<summary>Cover tile width</summary>
 			<description>Width in pixels of the book cover tiles in the library grid.</description>
 		</key>
+		<key name="ebooks-folder" type="s">
+			<default>''</default>
+			<summary>Ebook folder</summary>
+			<description>Where Quill keeps the ebook files you add, laid out as Author/Title.epub. Empty means ~/Books.</description>
+		</key>
+		<key name="rename-files" type="b">
+			<default>true</default>
+			<summary>Rename files after editing metadata</summary>
+			<description>Keep each ebook's file name in step with its title and author.</description>
+		</key>
 	</schema>
 </schemalist>

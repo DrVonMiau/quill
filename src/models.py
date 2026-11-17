@@ -8,7 +8,8 @@ class Book(GObject.Object):
     def __init__(self, id, title, author="", year=0, pages=0, cover_path="",
                  status="want", rating=0, olid="", notes="", isbn="",
                  description="", tags="", current_page=0,
-                 date_started=None, date_finished=None):
+                 date_started=None, date_finished=None, file_path="",
+                 series="", series_index=0.0):
         super().__init__()
         self.id = id
         self.title = title
@@ -26,3 +27,6 @@ class Book(GObject.Object):
         self.current_page = current_page or 0
         self.date_started = date_started
         self.date_finished = date_finished
+        self.file_path = file_path or ""
+        self.series = series or ""
+        self.series_index = series_index or 0.0

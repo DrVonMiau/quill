@@ -13,6 +13,9 @@ DATA_DIR = Path(GLib.get_user_data_dir()) / "quill"
 CACHE_DIR = Path(GLib.get_user_cache_dir()) / "quill"
 COVERS_DIR = CACHE_DIR / "covers"
 DB_PATH = DATA_DIR / "library.db"
+# Ebook files Quill manages, laid out as Author/Title.epub. A plain folder in
+# the home directory so the files stay easy to find and back up.
+DEFAULT_EBOOKS_DIR = Path.home() / "Books"
 
 # The shelves a book can sit on.
 STATUSES = ("want", "reading", "read", "abandoned")
@@ -52,6 +55,12 @@ _MIGRATIONS = (
     ("description", "TEXT DEFAULT ''"),
     ("tags", "TEXT DEFAULT ''"),
     ("current_page", "INTEGER NOT NULL DEFAULT 0"),
+    # 1.1: ebook files and the metadata written into them.
+    ("file_path", "TEXT DEFAULT ''"),
+    ("series", "TEXT DEFAULT ''"),
+    ("series_index", "REAL NOT NULL DEFAULT 0"),
+    ("publisher", "TEXT DEFAULT ''"),
+    ("language", "TEXT DEFAULT ''"),
 )
 
 
@@ -254,6 +263,53 @@ def books_without_cover(con):
 def delete_book(con, book_id):
     con.execute("DELETE FROM books WHERE id=?", (book_id,))
     con.commit()
+
+
+# ---------- ebook files ----------
+
+def set_file(con, book_id, file_path):
+    con.execute("UPDATE books SET file_path=? WHERE id=?", (file_path or "", book_id))
+    con.commit()
+
+
+def book_by_file(con, file_path):
+    return con.execute("SELECT * FROM books WHERE file_path=?", (file_path,)).fetchone()
+
+
+def find_match(con, *, title, author="", isbn=""):
+    """An existing book this ebook most likely belongs to: same ISBN, or the
+    same title and author ignoring case. Used to attach a file to a book that's
+    already being tracked rather than adding a duplicate."""
+    if isbn:
+        row = con.execute("SELECT * FROM books WHERE isbn=?", (isbn,)).fetchone()
+        if row:
+            return row
+    if title:
+        return con.execute(
+            "SELECT * FROM books WHERE lower(title)=lower(?) AND lower(author)=lower(?)",
+            (title, author or "")).fetchone()
+    return None
+
+
+# Everything the metadata editor may change. Status, rating, dates and notes are
+# reading history, not book metadata, so they're deliberately excluded.
+_METADATA = ("title", "author", "year", "pages", "isbn", "description", "tags",
+             "series", "series_index", "publisher", "language")
+
+
+def set_metadata(con, book_id, **fields):
+    cols = [(k, v) for k, v in fields.items() if k in _METADATA]
+    if not cols:
+        return
+    assignments = ", ".join(f"{name}=?" for name, _ in cols)
+    con.execute(f"UPDATE books SET {assignments} WHERE id=?",
+                [v for _, v in cols] + [book_id])
+    con.commit()
+
+
+def books_with_files(con):
+    return con.execute(
+        "SELECT * FROM books WHERE file_path IS NOT NULL AND file_path!=''").fetchall()
 
 
 def wipe_library(con):

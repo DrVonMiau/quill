@@ -10,7 +10,10 @@
         "--socket=fallback-x11",
         "--socket=wayland",
         "--device=dri",
-        "--filesystem=host-os:ro"
+        "--filesystem=host-os:ro",
+        "--filesystem=~/Books:create",
+        "--filesystem=/run/media",
+        "--filesystem=/media"
     ],
     "cleanup": [
         "/include",

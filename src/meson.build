@@ -39,6 +39,8 @@ quill_sources = [
   'csvexport.py',
   'analytics.py',
   'widgets.py',
+  'ebook.py',
+  'devices.py',
 ]
 
 install_data(quill_sources, install_dir: moduledir)

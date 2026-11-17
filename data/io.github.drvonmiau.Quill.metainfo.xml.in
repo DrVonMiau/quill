@@ -61,6 +61,16 @@
 		<control>pointing</control>
 	</supports>
 	<releases>
+		<release version="1.1.0" date="2026-11-17">
+			<description>
+				<p>Quill can now keep your ebooks, not just track them.</p>
+				<ul>
+					<li>Add EPUB files from the menu or by dropping them on the window; title, author, series, summary and cover are read from the book</li>
+					<li>Edit a book's details and have them written back into the EPUB, with the file renamed to Author/Title.epub</li>
+					<li>Send a book, or a whole shelf, to a Kobo, PocketBook or other USB e-reader</li>
+				</ul>
+			</description>
+		</release>
 		<release version="1.0.0" date="2026-08-31">
 			<description>
 				<p>Quill reaches 1.0 — its first stable release.</p>

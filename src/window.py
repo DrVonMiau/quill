@@ -16,6 +16,8 @@ from gi.repository import Adw, Gdk, Gio, GLib, Gtk, Pango
 
 from . import csvexport
 from . import csvimport
+from . import devices
+from . import ebook
 from . import enrich
 from . import googlebooks
 from . import library as lib
@@ -119,6 +121,7 @@ class QuillWindow(Adw.ApplicationWindow):
     detail_progress_bar = Gtk.Template.Child()
     detail_rating_box = Gtk.Template.Child()
     detail_tags_btn = Gtk.Template.Child()
+    detail_file = Gtk.Template.Child()
     detail_summary = Gtk.Template.Child()
     detail_readmore_btn = Gtk.Template.Child()
 
@@ -200,6 +203,14 @@ class QuillWindow(Adw.ApplicationWindow):
         exp.connect("activate", lambda *_a: self._open_export_dialog())
         self.add_action(exp)
 
+        ebooks = Gio.SimpleAction.new("add-ebooks", None)
+        ebooks.connect("activate", lambda *_a: self._open_ebook_picker())
+        self.add_action(ebooks)
+
+        send_shelf = Gio.SimpleAction.new("send-shelf", None)
+        send_shelf.connect("activate", lambda *_a: self._send_shelf())
+        self.add_action(send_shelf)
+
         missing = Gio.SimpleAction.new("find-missing-covers", None)
         missing.connect("activate", lambda *_a: self._find_missing_covers())
         self.add_action(missing)
@@ -223,7 +234,11 @@ class QuillWindow(Adw.ApplicationWindow):
                          ("book-find-cover", self._act_book_find_cover),
                          ("book-link", self._act_book_link),
                          ("book-abandon", self._act_book_abandon),
-                         ("book-remove", self._act_book_remove)):
+                         ("book-remove", self._act_book_remove),
+                         ("book-edit", self._act_book_edit),
+                         ("book-attach", self._act_book_attach),
+                         ("book-send", self._act_book_send),
+                         ("book-show-file", self._act_book_show_file)):
             act = Gio.SimpleAction.new(name, GLib.VariantType.new("x"))
             act.connect("activate", cb)
             self.add_action(act)
@@ -232,6 +247,12 @@ class QuillWindow(Adw.ApplicationWindow):
         if app is not None:
             app.set_accels_for_action("win.add-book", ["<primary>n"])
             app.set_accels_for_action("win.find", ["<primary>f"])
+            app.set_accels_for_action("win.add-ebooks", ["<primary>o"])
+
+        # Dropping .epub files anywhere on the window adds them to the library.
+        drop = Gtk.DropTarget.new(Gdk.FileList, Gdk.DragAction.COPY)
+        drop.connect("drop", self._on_drop_files)
+        self.add_controller(drop)
 
     def _build_sort_menu(self):
         menu = Gio.Menu()
@@ -494,7 +515,8 @@ class QuillWindow(Adw.ApplicationWindow):
                  rating=r["rating"], olid=r["olid"], isbn=r["isbn"], notes=r["notes"],
                  description=r["description"], tags=r["tags"],
                  current_page=r["current_page"], date_started=r["date_started"],
-                 date_finished=r["date_finished"])
+                 date_finished=r["date_finished"], file_path=r["file_path"],
+                 series=r["series"], series_index=r["series_index"])
             for r in lib.all_books(self.con)
         ]
 
@@ -643,6 +665,7 @@ class QuillWindow(Adw.ApplicationWindow):
         self._render_status_control(row["status"])
         self._render_stars(row["rating"])
         self._refresh_tags(row)
+        self._refresh_file(row)
         self._show_summary(row)
 
         self.info_revealer.set_reveal_child(True)
@@ -1406,6 +1429,9 @@ class QuillWindow(Adw.ApplicationWindow):
         cover_item = Gio.MenuItem.new("Change Cover…", None)
         cover_item.set_action_and_target_value("win.book-cover", GLib.Variant("x", book_id))
         mid.append_item(cover_item)
+        edit_item = Gio.MenuItem.new("Edit Details…", None)
+        edit_item.set_action_and_target_value("win.book-edit", GLib.Variant("x", book_id))
+        mid.append_item(edit_item)
         link_item = Gio.MenuItem.new("Link to Fetch Details…", None)
         link_item.set_action_and_target_value("win.book-link", GLib.Variant("x", book_id))
         mid.append_item(link_item)
@@ -1414,6 +1440,20 @@ class QuillWindow(Adw.ApplicationWindow):
             ab.set_action_and_target_value("win.book-abandon", GLib.Variant("x", book_id))
             mid.append_item(ab)
         menu.append_section(None, mid)
+
+        files = Gio.Menu()
+        if row and self._file_ok(row):
+            for label, action in (("Send to E-reader", "win.book-send"),
+                                  ("Show File", "win.book-show-file"),
+                                  ("Replace Ebook File…", "win.book-attach")):
+                item = Gio.MenuItem.new(label, None)
+                item.set_action_and_target_value(action, GLib.Variant("x", book_id))
+                files.append_item(item)
+        else:
+            item = Gio.MenuItem.new("Attach Ebook File…", None)
+            item.set_action_and_target_value("win.book-attach", GLib.Variant("x", book_id))
+            files.append_item(item)
+        menu.append_section(None, files)
 
         danger = Gio.Menu()
         rm = Gio.MenuItem.new("Remove from Library…", None)
@@ -1440,6 +1480,21 @@ class QuillWindow(Adw.ApplicationWindow):
 
     def _act_book_remove(self, _action, param):
         self._confirm_delete(param.unpack())
+
+    def _act_book_edit(self, _action, param):
+        self._open_edit_dialog(param.unpack())
+
+    def _act_book_attach(self, _action, param):
+        self._open_attach_picker(param.unpack())
+
+    def _act_book_send(self, _action, param):
+        self._send_books([param.unpack()])
+
+    def _act_book_show_file(self, _action, param):
+        row = lib.get_book(self.con, param.unpack())
+        if row and self._file_ok(row):
+            Gtk.FileLauncher(file=Gio.File.new_for_path(row["file_path"])) \
+                .open_containing_folder(self, None, None)
 
     # Moving onto a shelf stamps the matching reading date: Reading -> started,
     # Read -> finished.
@@ -1519,17 +1574,32 @@ class QuillWindow(Adw.ApplicationWindow):
             return
         row = lib.get_book(self.con, book_id)
         title = row["title"] if row else "this book"
-        dialog = Adw.AlertDialog(
-            heading="Remove book?",
-            body=f"“{title}” will be removed from your library.")
+        has_file = bool(row and self._file_ok(row))
+        body = f"“{title}” will be removed from your library."
+        if has_file:
+            body += " You can keep its ebook file or move it to the Trash."
+        dialog = Adw.AlertDialog(heading="Remove book?", body=body)
         dialog.add_response("cancel", "Cancel")
-        dialog.add_response("remove", "Remove")
+        if has_file:
+            dialog.add_response("trash", "Remove and Trash File")
+            dialog.set_response_appearance("trash", Adw.ResponseAppearance.DESTRUCTIVE)
+        dialog.add_response("remove", "Remove" if not has_file else "Keep File")
         dialog.set_response_appearance("remove", Adw.ResponseAppearance.DESTRUCTIVE)
-        dialog.connect("response",
-                       lambda _d, r: self._do_delete(book_id) if r == "remove" else None)
+
+        def on_response(_d, r):
+            if r in ("remove", "trash"):
+                self._do_delete(book_id, trash_file=(r == "trash"))
+
+        dialog.connect("response", on_response)
         dialog.present(self)
 
-    def _do_delete(self, book_id):
+    def _do_delete(self, book_id, trash_file=False):
+        row = lib.get_book(self.con, book_id)
+        if trash_file and row and self._file_ok(row):
+            try:
+                Gio.File.new_for_path(row["file_path"]).trash(None)
+            except GLib.Error:
+                self._toast("Couldn't move the file to the Trash; it was kept.")
         lib.delete_book(self.con, book_id)
         if self._detail_book_id == book_id:
             self._close_detail()
@@ -1793,6 +1863,401 @@ class QuillWindow(Adw.ApplicationWindow):
         self._load_books()
         dialog.close()
 
+    # ---------- ebook files ----------
+
+    def _ebooks_dir(self):
+        folder = self.settings.get_string("ebooks-folder").strip()
+        return os.path.expanduser(folder) if folder else str(lib.DEFAULT_EBOOKS_DIR)
+
+    @staticmethod
+    def _file_ok(row):
+        path = row["file_path"] if "file_path" in row.keys() else ""
+        return bool(path) and os.path.isfile(path)
+
+    def _refresh_file(self, row):
+        path = row["file_path"] or ""
+        if not path:
+            text, tip = "—", "No ebook file. Use ⋮ → Attach Ebook File…"
+        elif not os.path.isfile(path):
+            text, tip = "Missing", f"Expected at {path}"
+        else:
+            ext = os.path.splitext(path)[1].lstrip(".").upper()
+            text, tip = f"{ext} · {self._human_size(os.path.getsize(path))}", path
+        self.detail_file.set_label(text)
+        self.detail_file.set_tooltip_text(tip)
+
+    @staticmethod
+    def _human_size(n):
+        for unit in ("bytes", "KB", "MB", "GB"):
+            if n < 1024 or unit == "GB":
+                return f"{n:.0f} {unit}" if unit == "bytes" else f"{n:.1f} {unit}"
+            n /= 1024
+
+    @staticmethod
+    def _epub_filter():
+        f = Gtk.FileFilter()
+        f.set_name("EPUB ebooks")
+        f.add_suffix("epub")
+        f.add_mime_type("application/epub+zip")
+        filters = Gio.ListStore.new(Gtk.FileFilter)
+        filters.append(f)
+        return filters, f
+
+    def _open_ebook_picker(self):
+        dialog = Gtk.FileDialog(title="Add Ebook Files")
+        filters, default = self._epub_filter()
+        dialog.set_filters(filters)
+        dialog.set_default_filter(default)
+        dialog.open_multiple(self, None, self._on_ebooks_chosen)
+
+    def _on_ebooks_chosen(self, dialog, result):
+        try:
+            files = dialog.open_multiple_finish(result)
+        except GLib.Error:
+            return
+        paths = [files.get_item(i).get_path() for i in range(files.get_n_items())]
+        self._add_ebook_files([p for p in paths if p])
+
+    def _on_drop_files(self, _target, value, _x, _y):
+        paths = [f.get_path() for f in value.get_files() if f.get_path()]
+        paths = [p for p in paths if p.lower().endswith(ebook.SUFFIXES)]
+        if not paths:
+            self._toast("Only EPUB files can be added.")
+            return False
+        self._add_ebook_files(paths)
+        return True
+
+    @staticmethod
+    def _unique_path(path):
+        if not os.path.exists(path):
+            return path
+        stem, ext = os.path.splitext(path)
+        n = 2
+        while os.path.exists(f"{stem} ({n}){ext}"):
+            n += 1
+        return f"{stem} ({n}){ext}"
+
+    def _store_file(self, src, title, author):
+        """Copy an ebook into the ebook folder as Author/Title.epub. The
+        original is left where it was."""
+        ext = os.path.splitext(src)[1].lower()
+        dest = os.path.join(self._ebooks_dir(), ebook.library_relpath(title, author, ext))
+        if os.path.abspath(src) == os.path.abspath(dest):
+            return dest
+        os.makedirs(os.path.dirname(dest), exist_ok=True)
+        dest = self._unique_path(dest)
+        shutil.copyfile(src, dest)
+        return dest
+
+    def _cover_from_epub(self, book_id, meta):
+        if not meta.get("cover"):
+            return False
+        dest = lib.COVERS_DIR / f"{book_id}{meta['cover_ext'] or '.jpg'}"
+        try:
+            dest.write_bytes(meta["cover"])
+        except OSError:
+            return False
+        lib.set_cover(self.con, book_id, str(dest))
+        return True
+
+    def _add_ebook_files(self, paths):
+        added = attached = skipped = failed = 0
+        need_cover = []
+        for src in paths:
+            try:
+                meta = ebook.read(src)
+            except ebook.EbookError:
+                failed += 1
+                continue
+            title = meta["title"] or os.path.splitext(os.path.basename(src))[0]
+            author = meta["author"]
+            match = lib.find_match(self.con, title=title, author=author, isbn=meta["isbn"])
+            if match is not None and self._file_ok(match):
+                skipped += 1
+                continue
+            try:
+                stored = self._store_file(src, title, author)
+            except OSError:
+                failed += 1
+                continue
+            if match is not None:
+                # Already tracked (e.g. from a CSV import): give it the file and
+                # fill only what's missing, never overwriting what you entered.
+                book_id = match["id"]
+                lib.set_file(self.con, book_id, stored)
+                fill = {k: meta[k] for k in ("description", "series", "series_index",
+                                             "publisher", "language", "isbn", "year")
+                        if meta[k] and not match[k]}
+                if fill:
+                    lib.set_metadata(self.con, book_id, **fill)
+                if not match["cover_path"]:
+                    self._cover_from_epub(book_id, meta)
+                attached += 1
+            else:
+                book_id = lib.add_book(self.con, title=title, author=author,
+                                       year=meta["year"], isbn=meta["isbn"], status="want")
+                lib.set_metadata(self.con, book_id, description=meta["description"],
+                                 tags=self._normalize_tags(meta["tags"]),
+                                 series=meta["series"], series_index=meta["series_index"],
+                                 publisher=meta["publisher"], language=meta["language"])
+                lib.set_file(self.con, book_id, stored)
+                if not self._cover_from_epub(book_id, meta) and meta["isbn"]:
+                    need_cover.append((book_id, "", meta["isbn"]))
+                added += 1
+
+        self._load_books()
+        parts = []
+        if added:
+            parts.append(f"Added {added} ebook{'' if added == 1 else 's'} to To read")
+        if attached:
+            parts.append(f"attached {attached} to existing books")
+        if skipped:
+            parts.append(f"{skipped} already in library")
+        if failed:
+            parts.append(f"{failed} couldn't be read")
+        self._toast(" · ".join(parts) if parts else "Nothing added")
+        if need_cover:
+            self._fetch_covers_bulk(need_cover)
+
+    def _open_attach_picker(self, book_id):
+        dialog = Gtk.FileDialog(title="Attach Ebook File")
+        filters, default = self._epub_filter()
+        dialog.set_filters(filters)
+        dialog.set_default_filter(default)
+        dialog.open(self, None, lambda d, r: self._on_attach_chosen(d, r, book_id))
+
+    def _on_attach_chosen(self, dialog, result, book_id):
+        try:
+            gfile = dialog.open_finish(result)
+        except GLib.Error:
+            return
+        src = gfile.get_path() if gfile else None
+        row = lib.get_book(self.con, book_id)
+        if not src or not row:
+            return
+        try:
+            meta = ebook.read(src)
+            stored = self._store_file(src, row["title"], row["author"])
+        except (ebook.EbookError, OSError):
+            self._toast("Couldn't read that ebook.")
+            return
+        old = row["file_path"]
+        lib.set_file(self.con, book_id, stored)
+        if old and old != stored and os.path.isfile(old) and \
+                os.path.abspath(old).startswith(os.path.abspath(self._ebooks_dir())):
+            try:
+                Gio.File.new_for_path(old).trash(None)
+            except GLib.Error:
+                pass
+        if not row["cover_path"] and self._cover_from_epub(book_id, meta):
+            self._reload_grid()
+        # The file's own metadata may be stale; write what Quill knows into it.
+        self._write_file_metadata(book_id)
+        if self._detail_book_id == book_id:
+            self._open_book(book_id)
+        self._toast("Ebook file attached")
+
+    def _write_file_metadata(self, book_id):
+        """Push the book's details into its EPUB and, if enabled, rename the
+        file to match. Returns an error message, or None on success."""
+        row = lib.get_book(self.con, book_id)
+        if not row or not self._file_ok(row):
+            return None
+        path = row["file_path"]
+        try:
+            ebook.write(path, title=row["title"], author=row["author"] or "",
+                        description=row["description"] or "",
+                        publisher=row["publisher"] or "", language=row["language"] or "",
+                        year=row["year"] or 0, isbn=row["isbn"] or "",
+                        tags=row["tags"] or "", series=row["series"] or "",
+                        series_index=row["series_index"] or 0)
+        except (ebook.EbookError, OSError):
+            return "Saved in Quill, but couldn't write into the ebook file."
+        if not self.settings.get_boolean("rename-files"):
+            return None
+        root = os.path.abspath(self._ebooks_dir())
+        if not os.path.abspath(path).startswith(root + os.sep):
+            return None  # only rename files Quill manages
+        ext = os.path.splitext(path)[1].lower()
+        want = os.path.join(root, ebook.library_relpath(row["title"], row["author"], ext))
+        if os.path.abspath(path) == want:
+            return None
+        try:
+            os.makedirs(os.path.dirname(want), exist_ok=True)
+            want = self._unique_path(want)
+            os.rename(path, want)
+        except OSError:
+            return "Saved, but couldn't rename the file."
+        lib.set_file(self.con, book_id, want)
+        old_dir = os.path.dirname(path)
+        try:
+            if old_dir != root and not os.listdir(old_dir):
+                os.rmdir(old_dir)  # tidy an author folder we just emptied
+        except OSError:
+            pass
+        return None
+
+    def _open_edit_dialog(self, book_id):
+        row = lib.get_book(self.con, book_id)
+        if not row:
+            return
+        dialog = Adw.Dialog()
+        dialog.set_title("Edit Details")
+        dialog.set_content_width(480)
+        dialog.set_content_height(680)
+
+        page = Adw.PreferencesPage()
+
+        def entry(group, title, value):
+            r = Adw.EntryRow(title=title, use_markup=False)
+            r.set_text(value or "")
+            group.add(r)
+            return r
+
+        def spin(group, title, lo, hi, value, digits=0, step=1):
+            r = Adw.SpinRow.new_with_range(lo, hi, step)
+            r.set_title(title)
+            r.set_digits(digits)
+            r.set_value(value or 0)
+            group.add(r)
+            return r
+
+        main = Adw.PreferencesGroup()
+        title_r = entry(main, "Title", row["title"])
+        author_r = entry(main, "Author (separate several with &)", row["author"])
+        series_r = entry(main, "Series", row["series"])
+        index_r = spin(main, "Number in series", 0, 9999, row["series_index"],
+                       digits=1, step=1)
+        page.add(main)
+
+        pub = Adw.PreferencesGroup()
+        year_r = spin(pub, "Year", 0, 3000, row["year"])
+        pages_r = spin(pub, "Pages", 0, 100000, row["pages"])
+        isbn_r = entry(pub, "ISBN", row["isbn"])
+        publisher_r = entry(pub, "Publisher", row["publisher"])
+        lang_r = entry(pub, "Language (e.g. en, es)", row["language"])
+        tags_r = entry(pub, "Tags (comma-separated)", row["tags"])
+        page.add(pub)
+
+        desc_group = Adw.PreferencesGroup(title="Summary")
+        view = Gtk.TextView(wrap_mode=Gtk.WrapMode.WORD_CHAR, top_margin=10,
+                            bottom_margin=10, left_margin=12, right_margin=12)
+        view.get_buffer().set_text(row["description"] or "")
+        scroller = Gtk.ScrolledWindow(child=view, min_content_height=140,
+                                      css_classes=["card"])
+        desc_group.add(scroller)
+        page.add(desc_group)
+
+        note = Adw.PreferencesGroup()
+        if self._file_ok(row):
+            note.set_description("These details are also written into the ebook file, "
+                                 "so your e-reader shows them too.")
+        save = Gtk.Button(label="Save", halign=Gtk.Align.CENTER, margin_top=6,
+                          css_classes=["empty-cta"])
+        save.set_cursor(POINTER_CURSOR)
+        note.add(save)
+        page.add(note)
+
+        def on_save(*_a):
+            title = title_r.get_text().strip()
+            if not title:
+                self._toast("A book needs a title.")
+                return
+            buf = view.get_buffer()
+            lib.set_metadata(
+                self.con, book_id, title=title, author=author_r.get_text().strip(),
+                series=series_r.get_text().strip(),
+                series_index=float(index_r.get_value()),
+                year=int(year_r.get_value()), pages=int(pages_r.get_value()),
+                isbn=isbn_r.get_text().strip(),
+                publisher=publisher_r.get_text().strip(),
+                language=lang_r.get_text().strip(),
+                tags=self._normalize_tags(tags_r.get_text()),
+                description=buf.get_text(buf.get_start_iter(), buf.get_end_iter(),
+                                         False).strip())
+            err = self._write_file_metadata(book_id)
+            self._load_books()
+            if self._detail_book_id == book_id:
+                self._open_book(book_id)
+            self._toast(err or "Details saved")
+            dialog.close()
+
+        save.connect("clicked", on_save)
+        title_r.connect("entry-activated", on_save)
+
+        self._dialog_body(dialog, page)
+        dialog.present(self)
+
+    # ---------- send to e-reader ----------
+
+    def _send_shelf(self):
+        ids = [b.id for b in self._books_all if b.status == self.shelf and
+               b.file_path and os.path.isfile(b.file_path)]
+        if not ids:
+            self._toast(f"No books with ebook files on {SHELF_LABELS[self.shelf]}.")
+            return
+        self._send_books(ids)
+
+    def _send_books(self, book_ids):
+        found = devices.find_devices()
+        if not found:
+            self._toast("No e-reader found. Plug it in and make sure it's mounted.")
+            return
+        if len(found) == 1:
+            self._send_to(found[0], book_ids)
+            return
+        dialog = Adw.AlertDialog(heading="Send to which e-reader?")
+        dialog.add_response("cancel", "Cancel")
+        for i, dev in enumerate(found):
+            dialog.add_response(str(i), dev.name)
+        dialog.set_close_response("cancel")
+        dialog.connect("response", lambda _d, r: self._send_to(found[int(r)], book_ids)
+                       if r != "cancel" else None)
+        dialog.present(self)
+
+    def _send_to(self, device, book_ids):
+        jobs, unsupported = [], 0
+        for book_id in book_ids:
+            row = lib.get_book(self.con, book_id)
+            if not row or not self._file_ok(row):
+                continue
+            if not device.accepts(row["file_path"]):
+                unsupported += 1
+                continue
+            jobs.append((row["file_path"], dict(
+                title=row["title"], author=row["author"] or "",
+                series=row["series"] or "", series_index=row["series_index"] or 0)))
+        if not jobs:
+            if device.kind == "kindle":
+                self._toast("Kindles can't open EPUB files over USB — "
+                            "use Amazon's Send to Kindle instead.")
+            else:
+                self._toast(f"{device.name} can't open these files.")
+            return
+        self._toast(f"Sending {len(jobs)} book{'' if len(jobs) == 1 else 's'} "
+                    f"to {device.name}…")
+
+        def work():
+            sent, errors = 0, []
+            for path, info in jobs:
+                try:
+                    devices.send(device, path, **info)
+                    sent += 1
+                except (ebook.EbookError, OSError) as e:
+                    errors.append(str(e))
+            GLib.idle_add(done, sent, errors)
+
+        def done(sent, errors):
+            msg = f"Sent {sent} book{'' if sent == 1 else 's'} to {device.name}"
+            if errors:
+                msg += f" · {len(errors)} failed ({errors[0]})"
+            if unsupported:
+                msg += f" · {unsupported} in a format it can't open"
+            self._toast(msg)
+            return False
+
+        threading.Thread(target=work, daemon=True).start()
+
     # ---------- import from CSV ----------
 
     def _open_import_dialog(self):
@@ -1914,6 +2379,31 @@ class QuillWindow(Adw.ApplicationWindow):
         theme_row.connect("notify::selected", on_theme)
         appearance.add(theme_row)
         page.add(appearance)
+
+        files = Adw.PreferencesGroup(
+            title="Ebook Files",
+            description="Ebooks you add are copied here as Author/Title.epub. "
+                        "The originals are left untouched.")
+        folder_row = Adw.EntryRow(title="Ebook folder")
+        folder_row.set_text(self._ebooks_dir())
+        folder_row.set_show_apply_button(True)
+
+        def on_folder(r):
+            text = r.get_text().strip()
+            default = str(lib.DEFAULT_EBOOKS_DIR)
+            self.settings.set_string("ebooks-folder", "" if text in ("", default) else text)
+            r.set_text(self._ebooks_dir())
+            self._toast("New ebooks will go to " + self._ebooks_dir())
+
+        folder_row.connect("apply", on_folder)
+        files.add(folder_row)
+        rename_row = Adw.SwitchRow(
+            title="Rename files after editing",
+            subtitle="Keep file names in step with each book's title and author")
+        self.settings.bind("rename-files", rename_row, "active",
+                           Gio.SettingsBindFlags.DEFAULT)
+        files.add(rename_row)
+        page.add(files)
 
         danger = Adw.PreferencesGroup(title="Library")
         wipe_row = Adw.ActionRow(title="Delete All Books…", activatable=True)
