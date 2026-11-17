@@ -61,6 +61,9 @@ _MIGRATIONS = (
     ("series_index", "REAL NOT NULL DEFAULT 0"),
     ("publisher", "TEXT DEFAULT ''"),
     ("language", "TEXT DEFAULT ''"),
+    # Whether you own a copy. A book with an ebook file always counts as owned;
+    # this flag covers paper copies and ebooks kept elsewhere.
+    ("owned", "INTEGER NOT NULL DEFAULT 0"),
 )
 
 
@@ -74,6 +77,7 @@ def connect():
     con.executescript(_SCHEMA)
     _migrate(con)
     _normalize_read_progress(con)
+    con.execute("UPDATE books SET owned=1 WHERE owned=0 AND file_path!=''")
     con.commit()
     return con
 
@@ -268,7 +272,17 @@ def delete_book(con, book_id):
 # ---------- ebook files ----------
 
 def set_file(con, book_id, file_path):
-    con.execute("UPDATE books SET file_path=? WHERE id=?", (file_path or "", book_id))
+    """Attach (or detach, with an empty path) an ebook file. Attaching one
+    also marks the book as owned."""
+    if file_path:
+        con.execute("UPDATE books SET file_path=?, owned=1 WHERE id=?", (file_path, book_id))
+    else:
+        con.execute("UPDATE books SET file_path='' WHERE id=?", (book_id,))
+    con.commit()
+
+
+def set_owned(con, book_id, owned):
+    con.execute("UPDATE books SET owned=? WHERE id=?", (1 if owned else 0, book_id))
     con.commit()
 
 

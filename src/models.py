@@ -9,7 +9,7 @@ class Book(GObject.Object):
                  status="want", rating=0, olid="", notes="", isbn="",
                  description="", tags="", current_page=0,
                  date_started=None, date_finished=None, file_path="",
-                 series="", series_index=0.0):
+                 series="", series_index=0.0, owned=False):
         super().__init__()
         self.id = id
         self.title = title
@@ -30,3 +30,4 @@ class Book(GObject.Object):
         self.file_path = file_path or ""
         self.series = series or ""
         self.series_index = series_index or 0.0
+        self.owned = bool(owned) or bool(self.file_path)

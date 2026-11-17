@@ -35,13 +35,17 @@ APP_ID = "io.github.drvonmiau.Quill"
 
 # Shelves shown as tabs, in the order the design lays them out. Each maps to a
 # stored book status.
-SHELVES = ("read", "reading", "want", "abandoned")
+SHELVES = ("read", "reading", "want", "abandoned", "library")
 SHELF_LABELS = {
     "read": "Read",
     "reading": "Reading",
     "want": "To read",
     "abandoned": "Abandoned",
+    "library": "Library",
 }
+# The Library tab isn't a reading status: it shows every book you own, whatever
+# shelf it's on.
+LIBRARY = "library"
 # The three-way status control in the detail panel (Abandoned is set via its own
 # button, not this control).
 STATUS_CONTROL = ("read", "reading", "want")
@@ -97,6 +101,9 @@ class QuillWindow(Adw.ApplicationWindow):
     tab_reading = Gtk.Template.Child()
     tab_toread = Gtk.Template.Child()
     tab_abandoned = Gtk.Template.Child()
+    tab_library = Gtk.Template.Child()
+    empty_page = Gtk.Template.Child()
+    add_first_btn = Gtk.Template.Child()
     search_entry = Gtk.Template.Child()
     add_btn = Gtk.Template.Child()
     sort_btn = Gtk.Template.Child()
@@ -148,6 +155,7 @@ class QuillWindow(Adw.ApplicationWindow):
             "reading": self.tab_reading,
             "want": self.tab_toread,
             "abandoned": self.tab_abandoned,
+            LIBRARY: self.tab_library,
         }
         self._status_buttons = {
             "read": self.status_read_btn,
@@ -238,7 +246,8 @@ class QuillWindow(Adw.ApplicationWindow):
                          ("book-edit", self._act_book_edit),
                          ("book-attach", self._act_book_attach),
                          ("book-send", self._act_book_send),
-                         ("book-show-file", self._act_book_show_file)):
+                         ("book-show-file", self._act_book_show_file),
+                         ("book-owned", self._act_book_owned)):
             act = Gio.SimpleAction.new(name, GLib.VariantType.new("x"))
             act.connect("activate", cb)
             self.add_action(act)
@@ -456,15 +465,23 @@ class QuillWindow(Adw.ApplicationWindow):
         cover = Cover("", width=self._cover_w)
         cover.add_css_class("card-cover")
         cover.set_halign(Gtk.Align.FILL)
+        # The cover sits in an overlay so an "owned" chip can ride its corner.
+        cover_wrap = Gtk.Overlay()
+        cover_wrap.set_child(cover)
+        badge = Gtk.Image(icon_name="quill-owned-symbolic", halign=Gtk.Align.END,
+                          valign=Gtk.Align.START, margin_top=6, margin_end=6,
+                          tooltip_text="You own this book", visible=False)
+        badge.add_css_class("owned-badge")
+        cover_wrap.add_overlay(badge)
         title = Gtk.Label(xalign=0, ellipsize=Pango.EllipsizeMode.END, wrap=True, lines=2,
                           css_classes=["card-title"])
         title.set_valign(Gtk.Align.START)
         author = Gtk.Label(xalign=0, ellipsize=Pango.EllipsizeMode.END,
                            css_classes=["card-subtitle"])
-        box.append(cover)
+        box.append(cover_wrap)
         box.append(title)
         box.append(author)
-        box.cover, box.title, box.author = cover, title, author
+        box.cover, box.title, box.author, box.badge = cover, title, author, badge
         box._book_id = None
         secondary = Gtk.GestureClick(button=Gdk.BUTTON_SECONDARY)
         secondary.connect("pressed", self._on_card_secondary, box)
@@ -501,6 +518,8 @@ class QuillWindow(Adw.ApplicationWindow):
         box.cover.set_path(book.cover_path or None)
         box.title.set_label(book.title)
         box.author.set_label(book.author or "Unknown author")
+        # On the Library tab every book is owned, so the chip would be noise.
+        box.badge.set_visible(book.owned and self.shelf != LIBRARY)
 
     # ---------- loading / filtering ----------
 
@@ -516,7 +535,7 @@ class QuillWindow(Adw.ApplicationWindow):
                  description=r["description"], tags=r["tags"],
                  current_page=r["current_page"], date_started=r["date_started"],
                  date_finished=r["date_finished"], file_path=r["file_path"],
-                 series=r["series"], series_index=r["series_index"])
+                 series=r["series"], series_index=r["series_index"], owned=r["owned"])
             for r in lib.all_books(self.con)
         ]
 
@@ -544,15 +563,35 @@ class QuillWindow(Adw.ApplicationWindow):
         q = self._search_query
         visible = []
         for b in self._sorted(self._books_all):
-            if b.status != self.shelf:
+            if self.shelf == LIBRARY:
+                if not b.owned:
+                    continue
+            elif b.status != self.shelf:
                 continue
             if q and not self._matches_query(b, q):
                 continue
             visible.append(b)
 
         self.book_store.splice(0, self.book_store.get_n_items(), visible)
+        self._update_empty_page()
         self.paper_stack.set_visible_child_name("empty" if not visible else "library")
         self._restore_grid_selection(visible)
+
+    def _update_empty_page(self):
+        if self.shelf == LIBRARY:
+            self.empty_page.set_icon_name("quill-owned-symbolic")
+            self.empty_page.set_title("Nothing in Your Library Yet")
+            self.empty_page.set_description(
+                "Books you own show up here. Add ebook files, or mark a book "
+                "as owned from its ⋮ menu.")
+            self.add_first_btn.set_label("Add Ebook Files…")
+            self.add_first_btn.set_action_name("win.add-ebooks")
+        else:
+            self.empty_page.set_icon_name("quill-status-toread-symbolic")
+            self.empty_page.set_title("No Books Yet")
+            self.empty_page.set_description("Search Open Library to start your shelf.")
+            self.add_first_btn.set_label("Add a Book…")
+            self.add_first_btn.set_action_name("win.add-book")
 
     def _restore_grid_selection(self, visible):
         if self._detail_book_id is None:
@@ -589,7 +628,9 @@ class QuillWindow(Adw.ApplicationWindow):
                 btn.remove_css_class("tab-active")
         self._close_detail()
         self.settings.set_string("last-shelf", shelf)
-        self._apply_filter()
+        # Fresh items so every card rebinds: the owned chip depends on the tab,
+        # and the grid would otherwise reuse cards bound on the previous one.
+        self._reload_grid()
 
     def _on_toggle_search(self, btn):
         active = btn.get_active()
@@ -1450,6 +1491,10 @@ class QuillWindow(Adw.ApplicationWindow):
                 item.set_action_and_target_value(action, GLib.Variant("x", book_id))
                 files.append_item(item)
         else:
+            owned = bool(row and row["owned"])
+            item = Gio.MenuItem.new("Mark as Not Owned" if owned else "Mark as Owned", None)
+            item.set_action_and_target_value("win.book-owned", GLib.Variant("x", book_id))
+            files.append_item(item)
             item = Gio.MenuItem.new("Attach Ebook File…", None)
             item.set_action_and_target_value("win.book-attach", GLib.Variant("x", book_id))
             files.append_item(item)
@@ -1489,6 +1534,19 @@ class QuillWindow(Adw.ApplicationWindow):
 
     def _act_book_send(self, _action, param):
         self._send_books([param.unpack()])
+
+    def _act_book_owned(self, _action, param):
+        book_id = param.unpack()
+        row = lib.get_book(self.con, book_id)
+        if not row:
+            return
+        owned = not row["owned"]
+        lib.set_owned(self.con, book_id, owned)
+        self._reload_grid()
+        self._resync_detail(book_id)
+        if self._detail_book_id == book_id:
+            self._refresh_file(lib.get_book(self.con, book_id))
+        self._toast("Added to your Library" if owned else "Removed from your Library")
 
     def _act_book_show_file(self, _action, param):
         row = lib.get_book(self.con, param.unpack())
@@ -1876,8 +1934,10 @@ class QuillWindow(Adw.ApplicationWindow):
 
     def _refresh_file(self, row):
         path = row["file_path"] or ""
-        if not path:
-            text, tip = "—", "No ebook file. Use ⋮ → Attach Ebook File…"
+        if not path and row["owned"]:
+            text, tip = "Yes", "You own a copy. Attach an ebook file from the ⋮ menu."
+        elif not path:
+            text, tip = "No", "Mark as owned or attach an ebook file from the ⋮ menu."
         elif not os.path.isfile(path):
             text, tip = "Missing", f"Expected at {path}"
         else:
@@ -2191,8 +2251,9 @@ class QuillWindow(Adw.ApplicationWindow):
     # ---------- send to e-reader ----------
 
     def _send_shelf(self):
-        ids = [b.id for b in self._books_all if b.status == self.shelf and
-               b.file_path and os.path.isfile(b.file_path)]
+        ids = [b.id for b in self._books_all
+               if (self.shelf == LIBRARY or b.status == self.shelf)
+               and b.file_path and os.path.isfile(b.file_path)]
         if not ids:
             self._toast(f"No books with ebook files on {SHELF_LABELS[self.shelf]}.")
             return

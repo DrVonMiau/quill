@@ -29,6 +29,7 @@
 				<choice value="reading"/>
 				<choice value="want"/>
 				<choice value="abandoned"/>
+				<choice value="library"/>
 			</choices>
 			<default>'reading'</default>
 			<summary>Last active shelf</summary>
